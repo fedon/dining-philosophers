@@ -57,7 +57,7 @@ public class Philosopher extends Thread {
                 hungry();
                 return;
             }
-        } // eat without turn, start new queue
+        } // eat without turn, start new eating queue
         updateMaxWait(); // eat
         full();
     }
@@ -120,9 +120,5 @@ public class Philosopher extends Thread {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-    }
-
-    int foo() {
-        return start == 0 ? 0 : 1;
     }
 }
