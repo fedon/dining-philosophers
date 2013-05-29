@@ -1,30 +1,34 @@
 package org.fedon.dfs;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 /**
  * @author Dmytro Fedonin
  *
  */
-public class Philosopher {
+public class Philosopher extends Thread {
     String name;
-    Fork leftFork;
-    Fork rightFork;
+    ReentrantLock leftFork;
+    ReentrantLock rightFork;
     boolean isMyTrun = true;
     static AtomicInteger maxWait = new AtomicInteger();
+    static AtomicInteger eating = new AtomicInteger();
+    static AtomicInteger waiting = new AtomicInteger();
+    static AtomicInteger thinking = new AtomicInteger();
+    long start = 0;
 
     public Philosopher(String name) {
         this.name = name;
-        leftFork = new Fork();
-        rightFork = new Fork();
+        leftFork = new ReentrantLock();
+        rightFork = new ReentrantLock();
     }
 
     public Philosopher(String name, Philosopher left) {
         this.name = name;
         leftFork = left.rightFork;
-        rightFork = new Fork();
+        rightFork = new ReentrantLock();
     }
 
     public Philosopher(String name, Philosopher left, Philosopher right) {
@@ -34,58 +38,57 @@ public class Philosopher {
     }
 
     public void hungry() throws InterruptedException {
-        long start = System.currentTimeMillis();
-        System.out.println(name + " is hungry.");
+        if (start == 0)
+            start = System.currentTimeMillis();
         if (isMyTrun) { // insist
-            if (!leftFork.take()) {
-                waitForLeft();
-            }
-            if (!rightFork.take()) {
-                waitForRight();
-            }
+            leftFork.lock();
+            rightFork.lock();
         } else { // flexible
-            if (leftFork.isFree.get() && rightFork.isFree.get()) { // eat without turn, start new queue
-                boolean left = leftFork.take();
-                boolean right = rightFork.take();
-                if (!(left && right)) { // fail to eat, fall back
-                    if (!right)
-                        rightFork.put();
-                    if (!left)
-                        leftFork.put();
-                    waitForTurn();
-                    hungry();
-                    return;
-                }
-            } else { // wait for turn
+            boolean mayEat = leftFork.tryLock();
+            if (!mayEat) {
                 waitForTurn();
                 hungry();
                 return;
             }
-        }
-        updateMaxWait(start); // eat
+            mayEat &= rightFork.tryLock();
+            if (!mayEat) {
+                leftFork.unlock();
+                waitForTurn();
+                hungry();
+                return;
+            }
+        } // eat without turn, start new queue
+        updateMaxWait(); // eat
         full();
     }
 
     public void full() {
-        leftFork.put();
-        rightFork.put();
+        notifyRight();
+
+        leftFork.unlock();
+        rightFork.unlock();
 
         isMyTrun = false;
     }
 
-    void waitForLeft() {
-
+    void waitForTurn() throws InterruptedException {
+        waitForLeft();
+        isMyTrun = true;
     }
 
-    void waitForRight() {
-
+    void waitForLeft() throws InterruptedException {
+        synchronized (leftFork) {
+            leftFork.wait();
+        }
     }
 
-    void waitForTurn() {
-
+    void notifyRight() {
+        synchronized (rightFork) {
+            rightFork.notify();
+        }
     }
 
-    void updateMaxWait(long start) throws InterruptedException {
+    void updateMaxWait() throws InterruptedException {
         long cur = System.currentTimeMillis();
         int curWait = (int) ((cur - start) / 1000);
         boolean result;
@@ -97,23 +100,29 @@ public class Philosopher {
             }
 
         } while (result);
-        System.out.println(name + " is eating...\n --- waiting time: " + curWait + " --- max time: " + maxWait);
-        wait(cur % 1000 * 10);
-        System.out.println(name + " is full.");
+        start = 0;
+        waiting.decrementAndGet();
+        System.out.println(name + " is eating... + " + eating.incrementAndGet() + "\n --- waiting time: " + curWait + " --- max time: " + maxWait);
+        sleep(cur % 1000 * 3); // max eating 3 sec
+        eating.decrementAndGet();
+        System.out.println(name + " is thinking. * " + thinking.incrementAndGet());
     }
 
-    class Fork {
-        AtomicBoolean isFree = new AtomicBoolean(true);
-
-        // boolean isFree = true;
-
-        boolean take() { // TODO is sync
-            return isFree.compareAndSet(true, false);
-            // return true;
+    public void run() {
+        System.out.println(name + " starts thinking. - " + thinking.incrementAndGet());
+        try {
+            while (true) {
+                sleep(System.currentTimeMillis() % 1000 * 3); // max thinking 3 sec
+                thinking.decrementAndGet();
+                System.out.println(name + " is hungry. # " + waiting.incrementAndGet());
+                hungry();
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
+    }
 
-        void put() {
-            isFree.set(true);
-        }
+    int foo() {
+        return start == 0 ? 0 : 1;
     }
 }
