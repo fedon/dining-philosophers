@@ -90,7 +90,7 @@ public class Philosopher extends Thread {
 
     void updateMaxWait() throws InterruptedException {
         long cur = System.currentTimeMillis();
-        int curWait = (int) ((cur - start) / 1000);
+        int curWait = (int) ((cur - start + 500) / 1000);
         boolean result;
         do {
             result = false;
