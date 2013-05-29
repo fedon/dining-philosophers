@@ -1,6 +1,7 @@
 package org.fedon.dfs;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 
 /**
@@ -12,6 +13,7 @@ public class Philosopher {
     Fork leftFork;
     Fork rightFork;
     boolean isMyTrun = true;
+    static AtomicInteger maxWait = new AtomicInteger();
 
     public Philosopher(String name) {
         this.name = name;
@@ -31,19 +33,37 @@ public class Philosopher {
         rightFork = right.leftFork;
     }
 
-    public void hungry() {
-        if (isMyTrun) {
-            if (leftFork.take()) {
-                rightFork.take();
-            } else {
-                // TODO sync
+    public void hungry() throws InterruptedException {
+        long start = System.currentTimeMillis();
+        System.out.println(name + " is hungry.");
+        if (isMyTrun) { // insist
+            if (!leftFork.take()) {
+                waitForLeft();
             }
-        } else {
-            if (leftFork.isFree.get() && rightFork.isFree.get()) {
-                leftFork.take();
-                rightFork.take();
+            if (!rightFork.take()) {
+                waitForRight();
+            }
+        } else { // flexible
+            if (leftFork.isFree.get() && rightFork.isFree.get()) { // eat without turn, start new queue
+                boolean left = leftFork.take();
+                boolean right = rightFork.take();
+                if (!(left && right)) { // fail to eat, fall back
+                    if (!right)
+                        rightFork.put();
+                    if (!left)
+                        leftFork.put();
+                    waitForTurn();
+                    hungry();
+                    return;
+                }
+            } else { // wait for turn
+                waitForTurn();
+                hungry();
+                return;
             }
         }
+        updateMaxWait(start); // eat
+        full();
     }
 
     public void full() {
@@ -51,6 +71,35 @@ public class Philosopher {
         rightFork.put();
 
         isMyTrun = false;
+    }
+
+    void waitForLeft() {
+
+    }
+
+    void waitForRight() {
+
+    }
+
+    void waitForTurn() {
+
+    }
+
+    void updateMaxWait(long start) throws InterruptedException {
+        long cur = System.currentTimeMillis();
+        int curWait = (int) ((cur - start) / 1000);
+        boolean result;
+        do {
+            result = false;
+            int atom = maxWait.get();
+            if (atom < curWait) {
+                result = !maxWait.compareAndSet(atom, curWait);
+            }
+
+        } while (result);
+        System.out.println(name + " is eating...\n --- waiting time: " + curWait + " --- max time: " + maxWait);
+        wait(cur % 1000 * 10);
+        System.out.println(name + " is full.");
     }
 
     class Fork {
